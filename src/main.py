@@ -5,9 +5,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from flask import Flask, send_from_directory
 from flask_cors import CORS
+from sqlalchemy.pool import NullPool
 from src.models.user import db
 from src.routes.user import user_bp
 from src.routes.note import note_bp
+from src.routes.translate import translate_bp
 from src.models.note import Note
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -19,13 +21,25 @@ CORS(app)
 # register blueprints
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(note_bp, url_prefix='/api')
-# configure database to use repository-root `database/app.db`
+app.register_blueprint(translate_bp, url_prefix='/api')
+# Keep SQLite locally; use an external database on Vercel.
 ROOT_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-DB_PATH = os.path.join(ROOT_DIR, 'database', 'app.db')
-# ensure database directory exists
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+database_url = os.getenv('DATABASE_URL', '').strip()
+if os.getenv('VERCEL') and (not database_url or database_url.startswith('sqlite')):
+    raise RuntimeError('Configure DATABASE_URL with a Neon PostgreSQL connection string on Vercel.')
+if database_url.startswith(('postgres://', 'postgresql://')):
+    database_url = 'postgresql+psycopg://' + database_url.split('://', 1)[1]
+if not database_url:
+    DB_PATH = os.path.join(ROOT_DIR, 'database', 'app.db')
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    database_url = f"sqlite:///{DB_PATH}"
 
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH}"
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+if database_url.startswith('postgresql'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'poolclass': NullPool,
+        'connect_args': {'connect_timeout': 10},
+    }
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 with app.app_context():

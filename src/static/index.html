@@ -284,6 +284,12 @@
         }
 
         /* Responsive Design */
+        .translation-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .translation-controls select { padding: 8px; border: 1px solid #667eea; border-radius: 8px; }
+        #translateBtn { background: #667eea; color: white; }
+        #translateBtn:disabled { opacity: 0.6; cursor: wait; }
+        #translationResult { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 12px; padding: 16px; background: #f0f2ff; border-radius: 8px; }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -361,6 +367,18 @@
                         <label class="form-label" for="noteContent">Content</label>
                         <textarea class="form-textarea" id="noteContent" placeholder="Start writing your note..."></textarea>
                     </div>
+                    <div class="translation-controls">
+                        <label for="targetLanguage">Translate content to</label>
+                        <select id="targetLanguage">
+                            <option value="en">English</option>
+                            <option value="zh">中文（简体）</option>
+                        </select>
+                        <button type="button" class="btn" id="translateBtn">Translate</button>
+                    </div>
+                    <section aria-label="Translation preview" aria-live="polite" aria-busy="false" id="translationPreview">
+                        <p id="translationStatus">Translation preview only. Your original note is preserved.</p>
+                        <div id="translationResult" hidden></div>
+                    </section>
                 </div>
 
                 <div class="empty-state" id="emptyState">
@@ -377,6 +395,7 @@
                 this.notes = [];
                 this.currentNote = null;
                 this.isLoading = false;
+                this.translationRequest = null;
                 this.init();
             }
 
@@ -390,6 +409,9 @@
                 document.getElementById('saveBtn').addEventListener('click', () => this.saveNote());
                 document.getElementById('deleteBtn').addEventListener('click', () => this.deleteNote());
                 document.getElementById('searchBox').addEventListener('input', (e) => this.searchNotes(e.target.value));
+                document.getElementById('translateBtn').addEventListener('click', () => this.translateNote());
+                document.getElementById('targetLanguage').addEventListener('change', () => this.clearTranslation());
+                document.getElementById('noteContent').addEventListener('input', () => this.clearTranslation());
                 
                 // Auto-save on content change (debounced)
                 let saveTimeout;
@@ -477,17 +499,72 @@
             }
 
             showEditor() {
+                this.clearTranslation();
                 document.getElementById('emptyState').style.display = 'none';
                 document.getElementById('editorForm').style.display = 'block';
                 document.getElementById('editorActions').style.display = 'flex';
             }
 
             hideEditor() {
+                this.clearTranslation();
                 document.getElementById('emptyState').style.display = 'block';
                 document.getElementById('editorForm').style.display = 'none';
                 document.getElementById('editorActions').style.display = 'none';
                 document.getElementById('editorTitle').textContent = 'Select a note to edit';
                 this.currentNote = null;
+            }
+
+            clearTranslation() {
+                if (this.translationRequest) this.translationRequest.abort();
+                this.translationRequest = null;
+                document.getElementById('translateBtn').disabled = false;
+                document.getElementById('translationPreview').setAttribute('aria-busy', 'false');
+                document.getElementById('translationResult').hidden = true;
+                document.getElementById('translationResult').textContent = '';
+                document.getElementById('translationStatus').textContent = 'Translation preview only. Your original note is preserved.';
+            }
+
+            async translateNote() {
+                this.clearTranslation();
+                const text = document.getElementById('noteContent').value;
+                const status = document.getElementById('translationStatus');
+                if (!text.trim() || text.length > 12000) {
+                    status.textContent = 'Please enter between 1 and 12000 characters of note content.';
+                    return;
+                }
+                const controller = new AbortController();
+                this.translationRequest = controller;
+                document.getElementById('translateBtn').disabled = true;
+                document.getElementById('translationPreview').setAttribute('aria-busy', 'true');
+                status.textContent = 'Translating…';
+                const timeout = setTimeout(() => controller.abort(), 65000);
+                try {
+                    const response = await fetch('/api/translate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text, target_language: document.getElementById('targetLanguage').value }),
+                        signal: controller.signal
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Translation failed. Please try again.');
+                    if (typeof data.translated_text !== 'string') throw new Error('Invalid translation response.');
+                    if (this.translationRequest !== controller) return;
+                    const result = document.getElementById('translationResult');
+                    result.textContent = data.translated_text;
+                    result.hidden = false;
+                    status.textContent = 'Translation preview — original note unchanged.';
+                } catch (error) {
+                    if (this.translationRequest !== controller) return;
+                    status.textContent = error.name === 'AbortError' ? 'Translation timed out. Please try again.' :
+                        error instanceof SyntaxError ? 'Invalid JSON response. Please try again.' : error.message;
+                } finally {
+                    clearTimeout(timeout);
+                    if (this.translationRequest === controller) {
+                        this.translationRequest = null;
+                        document.getElementById('translateBtn').disabled = false;
+                        document.getElementById('translationPreview').setAttribute('aria-busy', 'false');
+                    }
+                }
             }
 
             async saveNote(isAutoSave = false) {

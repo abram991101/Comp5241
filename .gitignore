@@ -61,6 +61,7 @@ venv/
 ENV/
 env/
 .venv/
+.venv-test/
 env.bak/
 venv.bak/
 
@@ -88,6 +89,8 @@ celerybeat-schedule
 # dotenv
 .env
 .env.*
+!.env.example
+.vercel/
 
 # mypy
 .mypy_cache/
