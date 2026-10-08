@@ -149,7 +149,7 @@ The application is configured for easy deployment with:
 - CORS enabled for cross-origin requests
 - Host binding to `0.0.0.0` for external access
 - Production-ready Flask configuration
-- Persistent SQLite database
+- Local SQLite; Vercel requires an external PostgreSQL database via `DATABASE_URL`
 
 ## 🔧 Configuration
 
@@ -158,7 +158,7 @@ The application is configured for easy deployment with:
 - `SECRET_KEY`: Flask secret key for sessions
 
 ### Database Configuration
-- Database file: `src/database/app.db`
+- Local database file: `database/app.db`
 - Automatic table creation on first run
 - SQLAlchemy ORM for database operations
 
@@ -205,4 +205,29 @@ Potential improvements for future versions:
 ---
 
 **Built with ❤️ using Flask, SQLite, and modern web technologies**
+
+## Week 5: translation and Vercel
+
+Copy `.env.example` to `.env` only if `.env` does not already exist. Set
+`LLM_API_KEY` locally; do not commit it. The example uses OpenRouter's
+`openrouter/free` route. Run `python -m pip install -r requirements.txt`, then
+`python src/main.py`, and open http://localhost:5001. Select a note, choose
+Chinese or English, and click Translate. The result does not replace the note.
+
+Checks: `python -m unittest tests.test_translation -v` uses mocked LLM responses.
+`python -m tests.live_translation` calls the real API configured in your environment.
+
+For Vercel, create a Neon PostgreSQL database yourself and copy its pooled
+connection URL (with SSL) into Vercel's `DATABASE_URL` environment variable.
+Import this repository with the Flask preset and repository root as Root
+Directory. Deploy the branch containing these changes. Also configure
+`LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL` in Vercel. Disable Vercel
+Authentication under Settings > Deployment Protection for public access.
+Tables are created automatically; local SQLite notes are not migrated.
+
+Verify create/save/edit/search/delete and both translation directions on the
+public URL. OpenRouter and Neon connectivity must be tested after deployment.
+A working local application does not prove cloud access. Free models may be
+rate limited or unavailable; errors are displayed without replacing the note.
+Capture the original note and successful translation together for submission.
 
